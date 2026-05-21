@@ -1,0 +1,3 @@
+Sample license for Openstaller generated packages.
+
+Permission is granted to install, inspect, and uninstall this sample payload.

@@ -1,0 +1,132 @@
+name: Openstaller Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: windows-x86_64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-make
+
+      - name: Configure
+        shell: msys2 {0}
+        run: cmake -S . -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        shell: msys2 {0}
+        run: cmake --build build --parallel
+
+      - name: Test
+        shell: msys2 {0}
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Sign Windows executables
+        shell: pwsh
+        env:
+          WINDOWS_SIGNING_CERT_BASE64: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
+          WINDOWS_SIGNING_CERT_PASSWORD: ${{ secrets.WINDOWS_SIGNING_CERT_PASSWORD }}
+        run: |
+          if (-not $env:WINDOWS_SIGNING_CERT_BASE64) {
+            "No Windows signing certificate secret configured; publishing unsigned Windows EXEs."
+            exit 0
+          }
+          $pfxPath = Join-Path $env:RUNNER_TEMP "openstaller-signing.pfx"
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:WINDOWS_SIGNING_CERT_BASE64))
+          $signTool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1 -ExpandProperty FullName
+          foreach ($exe in "build\openstaller.exe", "build\openstaller-cli.exe", "build\openstaller-runtime.exe") {
+            & $signTool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $pfxPath /p $env:WINDOWS_SIGNING_CERT_PASSWORD $exe
+          }
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifact\Openstaller | Out-Null
+          Copy-Item build\openstaller.exe artifact\Openstaller\
+          Copy-Item build\openstaller-cli.exe artifact\Openstaller\
+          Copy-Item build\openstaller-runtime.exe artifact\Openstaller\
+          Copy-Item README.md,LICENSE,SECURITY.md,CONTRIBUTING.md artifact\Openstaller\
+          Copy-Item docs artifact\Openstaller\docs -Recurse
+          Compress-Archive -Path artifact\Openstaller -DestinationPath openstaller-windows-x86_64.zip -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openstaller-windows-x86_64
+          path: openstaller-windows-x86_64.zip
+
+  unix:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux-x86_64
+            archive: openstaller-linux-x86_64.tar.gz
+          - os: macos-latest
+            name: macos
+            archive: openstaller-macos.tar.gz
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Package
+        run: |
+          rm -rf artifact
+          mkdir -p artifact/Openstaller/docs
+          cp build/openstaller-cli artifact/Openstaller/
+          cp README.md LICENSE SECURITY.md CONTRIBUTING.md artifact/Openstaller/
+          cp -R docs/. artifact/Openstaller/docs/
+          tar -czf "${{ matrix.archive }}" -C artifact Openstaller
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openstaller-${{ matrix.name }}
+          path: ${{ matrix.archive }}
+
+  release:
+    name: github-release
+    needs: [windows, unix]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" artifacts/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "Openstaller ${GITHUB_REF_NAME}" \
+            --generate-notes

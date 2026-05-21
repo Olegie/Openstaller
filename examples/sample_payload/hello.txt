@@ -1,0 +1,4 @@
+Openstaller sample payload.
+
+This directory is intentionally small: it lets the CLI and GUI generate a real
+installer package during smoke tests without pulling in any external assets.
