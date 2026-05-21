@@ -435,6 +435,8 @@ int main(int argc, char **argv)
 
     {
         OsPackageInfo info;
+
+        memset(&info, 0, sizeof(info));
         if (os_read_embedded_package_info(installer_path, &info, message, sizeof(message)) != 0 ||
             strcmp(info.app_name, "Embedded Test App") != 0 ||
             strcmp(info.company_name, "Embedded Test Company") != 0 ||

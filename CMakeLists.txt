@@ -150,6 +150,7 @@ if(WIN32 AND OPENSTALLER_BUILD_GUI)
         src/runtime/win32_runtime_main.c
         src/runtime/win32_runtime_controls.c
         src/runtime/win32_runtime_elevation.c
+        src/runtime/win32_runtime_images.c
         src/runtime/win32_runtime_legacy.c
         src/runtime/win32_runtime_modern.c
         src/runtime/win32_runtime_pages.c
@@ -164,6 +165,7 @@ if(WIN32 AND OPENSTALLER_BUILD_GUI)
         src/gui/win32_builder_main.c
         src/gui/win32_builder_controls.c
         src/gui/win32_builder_pages.c
+        src/gui/win32_builder_preview.c
         src/win32/win32_i18n.c
         src/win32/openstaller_builder.rc)
     target_include_directories(openstaller PRIVATE

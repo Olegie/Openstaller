@@ -16,6 +16,7 @@ extern "C" {
 #define OS_MAX_PAGE_TEXT_LEN 512
 #define OS_MAX_ONLINE_COMPONENTS 16
 #define OS_COLOR_TEXT_LEN 16
+#define OS_ONLINE_PAGE_LEN 32
 
 #define OS_PAGE_WELCOME 0x00000001u
 #define OS_PAGE_LICENSE 0x00000002u
@@ -43,6 +44,7 @@ typedef struct OsOnlineComponent {
     char description[OS_MAX_PAGE_TEXT_LEN];
     char url[OS_MAX_URL_LEN];
     char target_path[OS_MAX_PATH_LEN];
+    char page[OS_ONLINE_PAGE_LEN];
     int selected_by_default;
 } OsOnlineComponent;
 

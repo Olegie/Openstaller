@@ -11,6 +11,13 @@
 
 static void bw_get(HWND hwnd, char *out, size_t out_size)
 {
+    if (out_size == 0) {
+        return;
+    }
+    out[0] = '\0';
+    if (hwnd == NULL) {
+        return;
+    }
     GetWindowTextA(hwnd, out, (int)out_size);
     out[out_size - 1] = '\0';
 }
@@ -73,184 +80,156 @@ static int bw_default_token_is_selected(const char *token)
            bw_ieq(token, "default");
 }
 
+static const char *bw_online_page_from_index(int index)
+{
+    switch (index) {
+    case 1:
+        return "ready";
+    case 2:
+        return "install";
+    default:
+        return "components";
+    }
+}
+
+static int bw_online_page_to_index(const char *page)
+{
+    if (page != NULL && bw_ieq(page, "ready")) {
+        return 1;
+    }
+    if (page != NULL &&
+        (bw_ieq(page, "install") || bw_ieq(page, "silent") || bw_ieq(page, "end"))) {
+        return 2;
+    }
+    return 0;
+}
+
 static void bw_parse_online_editor(void)
 {
-    char text[8192];
-    char *line;
+    int row;
 
     memset(g_bw.config.online_components, 0, sizeof(g_bw.config.online_components));
     g_bw.config.online_component_count = 0;
-    bw_get(g_bw.online_components, text, sizeof(text));
 
-    line = strtok(text, "\n");
-    while (line != NULL && g_bw.config.online_component_count < OS_MAX_ONLINE_COMPONENTS) {
-        char *fields[5] = {NULL, NULL, NULL, NULL, NULL};
-        char *cursor = line;
-        int field_count = 0;
-        int i;
+    for (row = 0; row < BW_ONLINE_ROWS && g_bw.config.online_component_count < OS_MAX_ONLINE_COMPONENTS; ++row) {
+        char name[OS_MAX_NAME_LEN];
+        char url[OS_MAX_URL_LEN];
+        char target[OS_MAX_PATH_LEN];
+        OsOnlineComponent *component;
 
-        while (field_count < 5) {
-            fields[field_count++] = cursor;
-            cursor = strchr(cursor, '|');
-            if (cursor == NULL) {
-                break;
-            }
-            *cursor++ = '\0';
+        bw_get(g_bw.online_name[row], name, sizeof(name));
+        bw_get(g_bw.online_url[row], url, sizeof(url));
+        bw_get(g_bw.online_target[row], target, sizeof(target));
+        bw_trim(name);
+        bw_trim(url);
+        bw_trim(target);
+        if (url[0] == '\0') {
+            continue;
         }
 
-        for (i = 0; i < field_count; ++i) {
-            bw_trim(fields[i]);
+        component = &g_bw.config.online_components[g_bw.config.online_component_count++];
+        if (name[0] == '\0') {
+            snprintf(name, sizeof(name), "Download %llu", (unsigned long long)g_bw.config.online_component_count);
         }
-
-        if (field_count == 1 && fields[0][0] != '\0') {
-            OsOnlineComponent *component = &g_bw.config.online_components[g_bw.config.online_component_count++];
-            char generated_name[32];
-
-            snprintf(generated_name, sizeof(generated_name), "Download %llu", (unsigned long long)g_bw.config.online_component_count);
-            bw_copy_component_text(component->name, sizeof(component->name), generated_name);
-            bw_copy_component_text(component->url, sizeof(component->url), fields[0]);
-            component->selected_by_default = 1;
-        } else if (field_count >= 2 && fields[1][0] != '\0') {
-            OsOnlineComponent *component = &g_bw.config.online_components[g_bw.config.online_component_count++];
-
-            bw_copy_component_text(component->name, sizeof(component->name), fields[0]);
-            bw_copy_component_text(component->url, sizeof(component->url), fields[1]);
-            if (field_count >= 3) {
-                bw_copy_component_text(component->target_path, sizeof(component->target_path), fields[2]);
-            }
-            component->selected_by_default = field_count < 4 || bw_default_token_is_selected(fields[3]);
-            if (field_count >= 5) {
-                bw_copy_component_text(component->description, sizeof(component->description), fields[4]);
-            }
-        }
-
-        line = strtok(NULL, "\n");
+        bw_copy_component_text(component->name, sizeof(component->name), name);
+        bw_copy_component_text(component->url, sizeof(component->url), url);
+        bw_copy_component_text(component->target_path, sizeof(component->target_path), target);
+        bw_copy_component_text(component->page,
+                               sizeof(component->page),
+                               bw_online_page_from_index((int)SendMessageA(g_bw.online_page[row], CB_GETCURSEL, 0, 0)));
+        component->selected_by_default = SendMessageA(g_bw.online_default[row], BM_GETCHECK, 0, 0) == BST_CHECKED;
     }
 }
 
 static void bw_load_online_editor(void)
 {
-    char text[8192];
-    size_t used = 0;
-    size_t i;
+    int row;
 
-    text[0] = '\0';
-    for (i = 0; i < g_bw.config.online_component_count && i < OS_MAX_ONLINE_COMPONENTS; ++i) {
-        const OsOnlineComponent *component = &g_bw.config.online_components[i];
-        int written;
+    for (row = 0; row < BW_ONLINE_ROWS; ++row) {
+        SetWindowTextA(g_bw.online_name[row], "");
+        SetWindowTextA(g_bw.online_url[row], "");
+        SetWindowTextA(g_bw.online_target[row], "");
+        SendMessageA(g_bw.online_page[row], CB_SETCURSEL, 0, 0);
+        SendMessageA(g_bw.online_default[row], BM_SETCHECK, BST_CHECKED, 0);
+    }
+    for (row = 0; row < BW_ONLINE_ROWS &&
+                  row < (int)g_bw.config.online_component_count &&
+                  row < OS_MAX_ONLINE_COMPONENTS;
+         ++row) {
+        const OsOnlineComponent *component = &g_bw.config.online_components[row];
 
         if (component->url[0] == '\0') {
             continue;
         }
-
-        written = snprintf(text + used,
-                           sizeof(text) - used,
-                           "%s | %s | %s | %s | %s\r\n",
-                           component->name,
-                           component->url,
-                           component->target_path,
-                           component->selected_by_default ? "checked" : "optional",
-                           component->description);
-        if (written < 0 || (size_t)written >= sizeof(text) - used) {
-            break;
-        }
-        used += (size_t)written;
+        SetWindowTextA(g_bw.online_name[row], component->name);
+        SetWindowTextA(g_bw.online_url[row], component->url);
+        SetWindowTextA(g_bw.online_target[row], component->target_path);
+        SendMessageA(g_bw.online_page[row], CB_SETCURSEL, bw_online_page_to_index(component->page), 0);
+        SendMessageA(g_bw.online_default[row], BM_SETCHECK, component->selected_by_default ? BST_CHECKED : BST_UNCHECKED, 0);
     }
-
-    SetWindowTextA(g_bw.online_components, text);
 }
 
-static void bw_load_page_flags_text(char *out, size_t out_size, uint32_t flags)
+static uint32_t bw_page_flag_by_index(int index)
 {
-    int first = 1;
+    switch (index) {
+    case 0:
+        return OS_PAGE_WELCOME;
+    case 1:
+        return OS_PAGE_LICENSE;
+    case 2:
+        return OS_PAGE_FOLDER;
+    case 3:
+        return OS_PAGE_COMPONENTS;
+    case 4:
+        return OS_PAGE_READY;
+    case 5:
+        return OS_PAGE_FINISH;
+    default:
+        return 0;
+    }
+}
 
-    out[0] = '\0';
-    if (flags == OS_PAGE_DEFAULT) {
-        strncpy(out, "full", out_size - 1);
-        out[out_size - 1] = '\0';
-        return;
-    }
-    if (flags == (OS_PAGE_FOLDER | OS_PAGE_COMPONENTS | OS_PAGE_READY | OS_PAGE_FINISH)) {
-        strncpy(out, "compact", out_size - 1);
-        out[out_size - 1] = '\0';
-        return;
-    }
-    if (flags == (OS_PAGE_FOLDER | OS_PAGE_READY | OS_PAGE_FINISH)) {
-        strncpy(out, "minimal", out_size - 1);
-        out[out_size - 1] = '\0';
-        return;
-    }
-#define BW_ADD_PAGE_FLAG(bit, name)                                      \
-    do {                                                                 \
-        if ((flags & (bit)) != 0) {                                       \
-            if (!first) {                                                 \
-                strncat(out, ",", out_size - strlen(out) - 1);           \
-            }                                                            \
-            strncat(out, (name), out_size - strlen(out) - 1);             \
-            first = 0;                                                    \
-        }                                                                \
-    } while (0)
+static int bw_page_flow_count(uint32_t flags)
+{
+    int i;
+    int count = 0;
 
-    BW_ADD_PAGE_FLAG(OS_PAGE_WELCOME, "welcome");
-    BW_ADD_PAGE_FLAG(OS_PAGE_LICENSE, "license");
-    BW_ADD_PAGE_FLAG(OS_PAGE_FOLDER, "folder");
-    BW_ADD_PAGE_FLAG(OS_PAGE_COMPONENTS, "components");
-    BW_ADD_PAGE_FLAG(OS_PAGE_READY, "ready");
-    BW_ADD_PAGE_FLAG(OS_PAGE_FINISH, "finish");
-#undef BW_ADD_PAGE_FLAG
-
-    if (out[0] == '\0') {
-        strncpy(out, "full", out_size - 1);
-        out[out_size - 1] = '\0';
+    for (i = 0; i < 6; ++i) {
+        if ((flags & bw_page_flag_by_index(i)) != 0) {
+            ++count;
+        }
     }
+    return count;
 }
 
 void bw_load_page_flow_editor(void)
 {
-    char text[160];
+    uint32_t flags = g_bw.config.page_flags != 0 ? g_bw.config.page_flags : OS_PAGE_DEFAULT;
+    char text[64];
+    int count;
+    int i;
 
-    bw_load_page_flags_text(text, sizeof(text), g_bw.config.page_flags);
-    SetWindowTextA(g_bw.page_flow, text);
+    for (i = 0; i < 6; ++i) {
+        SendMessageA(g_bw.page_flow_checks[i],
+                     BM_SETCHECK,
+                     (flags & bw_page_flag_by_index(i)) != 0 ? BST_CHECKED : BST_UNCHECKED,
+                     0);
+    }
+
+    count = bw_page_flow_count(flags);
+    snprintf(text, sizeof(text), "%d page%s enabled", count, count == 1 ? "" : "s");
+    SetWindowTextA(g_bw.page_flow_count, text);
 }
 
 static void bw_parse_page_flow_editor(void)
 {
-    char text[256];
-    char *token;
     uint32_t flags = 0;
+    int i;
 
-    bw_get(g_bw.page_flow, text, sizeof(text));
-    bw_trim(text);
-    if (text[0] == '\0' || bw_ieq(text, "full")) {
-        g_bw.config.page_flags = OS_PAGE_DEFAULT;
-        return;
-    }
-    if (bw_ieq(text, "compact")) {
-        g_bw.config.page_flags = OS_PAGE_FOLDER | OS_PAGE_COMPONENTS | OS_PAGE_READY | OS_PAGE_FINISH;
-        return;
-    }
-    if (bw_ieq(text, "minimal")) {
-        g_bw.config.page_flags = OS_PAGE_FOLDER | OS_PAGE_READY | OS_PAGE_FINISH;
-        return;
-    }
-
-    token = strtok(text, ",");
-    while (token != NULL) {
-        bw_trim(token);
-        if (bw_ieq(token, "welcome")) {
-            flags |= OS_PAGE_WELCOME;
-        } else if (bw_ieq(token, "license")) {
-            flags |= OS_PAGE_LICENSE;
-        } else if (bw_ieq(token, "folder") || bw_ieq(token, "location")) {
-            flags |= OS_PAGE_FOLDER;
-        } else if (bw_ieq(token, "components")) {
-            flags |= OS_PAGE_COMPONENTS;
-        } else if (bw_ieq(token, "ready")) {
-            flags |= OS_PAGE_READY;
-        } else if (bw_ieq(token, "finish") || bw_ieq(token, "complete")) {
-            flags |= OS_PAGE_FINISH;
+    for (i = 0; i < 6; ++i) {
+        if (SendMessageA(g_bw.page_flow_checks[i], BM_GETCHECK, 0, 0) == BST_CHECKED) {
+            flags |= bw_page_flag_by_index(i);
         }
-        token = strtok(NULL, ",");
     }
 
     g_bw.config.page_flags = flags != 0 ? flags : OS_PAGE_DEFAULT;
@@ -291,47 +270,201 @@ static char *bw_theme_slot(const char *name)
     return NULL;
 }
 
+static char *bw_theme_slot_by_index(int index)
+{
+    switch (index) {
+    case 0:
+        return g_bw.config.theme.accent;
+    case 1:
+        return g_bw.config.theme.progress;
+    case 2:
+        return g_bw.config.theme.sidebar;
+    case 3:
+        return g_bw.config.theme.sidebar_dark;
+    case 4:
+        return g_bw.config.theme.background;
+    case 5:
+        return g_bw.config.theme.panel;
+    case 6:
+        return g_bw.config.theme.text;
+    case 7:
+        return g_bw.config.theme.muted_text;
+    case 8:
+        return g_bw.config.theme.legacy_top;
+    case 9:
+        return g_bw.config.theme.legacy_bottom;
+    default:
+        return NULL;
+    }
+}
+
+static const char *bw_default_theme_value(int style, int index)
+{
+    static const char *classic[BW_THEME_COUNT] = {
+        "#0078D4", "#0078D4", "#154E9E", "#082766", "#F6F8FB",
+        "#FFFFFF", "#000000", "#57606A", "#0012E8", "#000012"
+    };
+    static const char *modern[BW_THEME_COUNT] = {
+        "#2563EB", "#0EA5E9", "#111827", "#0B1220", "#F8FAFC",
+        "#FFFFFF", "#0F172A", "#64748B", "#0012E8", "#000012"
+    };
+    static const char *legacy[BW_THEME_COUNT] = {
+        "#C0C0C0", "#B0008D", "#0000C0", "#000050", "#000012",
+        "#EEEFE0", "#000000", "#3A3A3A", "#0012E8", "#000012"
+    };
+
+    if (index < 0 || index >= BW_THEME_COUNT) {
+        return "#000000";
+    }
+    if (style == OS_INSTALLER_STYLE_MODERN) {
+        return modern[index];
+    }
+    if (style == OS_INSTALLER_STYLE_LEGACY) {
+        return legacy[index];
+    }
+    return classic[index];
+}
+
+void bw_reset_theme_colors(void)
+{
+    int style;
+    int i;
+
+    style = (int)SendMessageA(g_bw.installer_style, CB_GETCURSEL, 0, 0);
+    if (style < OS_INSTALLER_STYLE_CLASSIC || style > OS_INSTALLER_STYLE_LEGACY) {
+        style = g_bw.config.installer_style;
+    }
+    if (style < OS_INSTALLER_STYLE_CLASSIC || style > OS_INSTALLER_STYLE_LEGACY) {
+        style = OS_INSTALLER_STYLE_CLASSIC;
+    }
+
+    for (i = 0; i < BW_THEME_COUNT; ++i) {
+        const char *value = bw_default_theme_value(style, i);
+        char *slot = bw_theme_slot_by_index(i);
+
+        if (slot != NULL) {
+            bw_copy_component_text(slot, OS_COLOR_TEXT_LEN, value);
+        }
+        if (g_bw.theme_value[i] != NULL) {
+            SetWindowTextA(g_bw.theme_value[i], value);
+        }
+    }
+
+    bw_save_visible_values();
+    InvalidateRect(g_bw.window, NULL, TRUE);
+}
+
+static int bw_color_hex_digit(char ch)
+{
+    if (ch >= '0' && ch <= '9') {
+        return ch - '0';
+    }
+    if (ch >= 'a' && ch <= 'f') {
+        return ch - 'a' + 10;
+    }
+    if (ch >= 'A' && ch <= 'F') {
+        return ch - 'A' + 10;
+    }
+    return -1;
+}
+
+static COLORREF bw_color_from_hex(const char *value, COLORREF fallback)
+{
+    int r1;
+    int r2;
+    int g1;
+    int g2;
+    int b1;
+    int b2;
+
+    if (value == NULL || value[0] == '\0') {
+        return fallback;
+    }
+    if (value[0] == '#') {
+        ++value;
+    }
+    if (strlen(value) != 6) {
+        return fallback;
+    }
+    r1 = bw_color_hex_digit(value[0]);
+    r2 = bw_color_hex_digit(value[1]);
+    g1 = bw_color_hex_digit(value[2]);
+    g2 = bw_color_hex_digit(value[3]);
+    b1 = bw_color_hex_digit(value[4]);
+    b2 = bw_color_hex_digit(value[5]);
+    if (r1 < 0 || r2 < 0 || g1 < 0 || g2 < 0 || b1 < 0 || b2 < 0) {
+        return fallback;
+    }
+    return RGB((r1 << 4) | r2, (g1 << 4) | g2, (b1 << 4) | b2);
+}
+
+static void bw_color_to_hex(COLORREF color, char *out, size_t out_size)
+{
+    snprintf(out,
+             out_size,
+             "#%02X%02X%02X",
+             (unsigned)GetRValue(color),
+             (unsigned)GetGValue(color),
+             (unsigned)GetBValue(color));
+    out[out_size - 1] = '\0';
+}
+
+void bw_pick_theme_color(int index)
+{
+    static COLORREF custom_colors[16];
+    CHOOSECOLORA chooser;
+    char value[OS_COLOR_TEXT_LEN];
+    COLORREF color;
+
+    if (index < 0 || index >= BW_THEME_COUNT || g_bw.theme_value[index] == NULL) {
+        return;
+    }
+
+    bw_get(g_bw.theme_value[index], value, sizeof(value));
+    color = bw_color_from_hex(value, RGB(0, 120, 212));
+    memset(&chooser, 0, sizeof(chooser));
+    chooser.lStructSize = sizeof(chooser);
+    chooser.hwndOwner = g_bw.window;
+    chooser.rgbResult = color;
+    chooser.lpCustColors = custom_colors;
+    chooser.Flags = CC_FULLOPEN | CC_RGBINIT;
+    if (ChooseColorA(&chooser)) {
+        bw_color_to_hex(chooser.rgbResult, value, sizeof(value));
+        SetWindowTextA(g_bw.theme_value[index], value);
+        bw_save_visible_values();
+        InvalidateRect(g_bw.window, NULL, TRUE);
+    }
+}
+
 static void bw_parse_theme_editor(void)
 {
-    char text[2048];
-    char *line;
+    int i;
 
-    bw_get(g_bw.theme_colors, text, sizeof(text));
-    line = strtok(text, "\n");
-    while (line != NULL) {
-        char *equals = strchr(line, '=');
+    for (i = 0; i < BW_THEME_COUNT; ++i) {
+        char value[OS_COLOR_TEXT_LEN];
+        char *slot = bw_theme_slot_by_index(i);
 
-        if (equals != NULL) {
-            char *slot;
-
-            *equals = '\0';
-            bw_trim(line);
-            bw_trim(equals + 1);
-            slot = bw_theme_slot(line);
-            if (slot != NULL) {
-                bw_copy_component_text(slot, OS_COLOR_TEXT_LEN, equals + 1);
+        if (slot != NULL) {
+            bw_get(g_bw.theme_value[i], value, sizeof(value));
+            bw_trim(value);
+            if (value[0] != '\0') {
+                bw_copy_component_text(slot, OS_COLOR_TEXT_LEN, value);
             }
         }
-        line = strtok(NULL, "\n");
     }
 }
 
 void bw_load_theme_editor(void)
 {
-    char text[512];
+    int i;
 
-    snprintf(text,
-             sizeof(text),
-             "accent=%s\r\nprogress=%s\r\nsidebar=%s\r\nbackground=%s\r\npanel=%s\r\ntext=%s\r\nlegacy_top=%s\r\nlegacy_bottom=%s",
-             g_bw.config.theme.accent,
-             g_bw.config.theme.progress,
-             g_bw.config.theme.sidebar,
-             g_bw.config.theme.background,
-             g_bw.config.theme.panel,
-             g_bw.config.theme.text,
-             g_bw.config.theme.legacy_top,
-             g_bw.config.theme.legacy_bottom);
-    SetWindowTextA(g_bw.theme_colors, text);
+    for (i = 0; i < BW_THEME_COUNT; ++i) {
+        char *slot = bw_theme_slot_by_index(i);
+
+        if (slot != NULL) {
+            SetWindowTextA(g_bw.theme_value[i], slot);
+        }
+    }
 }
 
 static const char *bw_ui_font_from_index(int index)
@@ -422,6 +555,9 @@ void bw_load_text_editor(void)
     size_t title_size;
     size_t body_size;
 
+    if (g_bw.text_tabs != NULL) {
+        TabCtrl_SetCurSel(g_bw.text_tabs, g_bw.selected_text_page);
+    }
     bw_text_slots(g_bw.selected_text_page, &title, &title_size, &body, &body_size);
     (void)title_size;
     (void)body_size;
@@ -493,11 +629,11 @@ static void bw_hide_all_page_controls(void)
         g_bw.source_dir, g_bw.output_dir, g_bw.license_file, g_bw.wizard_image,
         g_bw.background_image, g_bw.launcher, g_bw.installer_icon, g_bw.uninstaller_icon,
         g_bw.text_page_label, g_bw.page_title_label, g_bw.page_body_label,
-        g_bw.text_page, g_bw.page_title, g_bw.page_body,
+        g_bw.text_page, g_bw.text_tabs, g_bw.page_title, g_bw.page_body,
         g_bw.installer_style_label, g_bw.installer_style,
         g_bw.ui_font_label, g_bw.ui_font, g_bw.window_style_label, g_bw.window_style,
-        g_bw.page_flow_label, g_bw.page_flow,
-        g_bw.theme_colors_label, g_bw.theme_colors,
+        g_bw.page_flow_label, g_bw.page_flow, g_bw.page_flow_count,
+        g_bw.theme_colors_label, g_bw.theme_colors, g_bw.theme_reset,
         g_bw.online_components_label, g_bw.online_components,
         g_bw.native_box, g_bw.register_box, g_bw.windows_box, g_bw.unix_box,
         g_bw.status, g_bw.open_output,
@@ -513,6 +649,24 @@ static void bw_hide_all_page_controls(void)
 
     for (i = 0; i < (int)(sizeof(controls) / sizeof(controls[0])); ++i) {
         bw_show(controls[i], 0);
+    }
+    for (i = 0; i < BW_THEME_COUNT; ++i) {
+        bw_show(g_bw.theme_name[i], 0);
+        bw_show(g_bw.theme_value[i], 0);
+        bw_show(g_bw.theme_pick[i], 0);
+    }
+    for (i = 0; i < 6; ++i) {
+        bw_show(g_bw.page_flow_checks[i], 0);
+    }
+    for (i = 0; i < 5; ++i) {
+        bw_show(g_bw.online_header[i], 0);
+    }
+    for (i = 0; i < BW_ONLINE_ROWS; ++i) {
+        bw_show(g_bw.online_name[i], 0);
+        bw_show(g_bw.online_url[i], 0);
+        bw_show(g_bw.online_target[i], 0);
+        bw_show(g_bw.online_page[i], 0);
+        bw_show(g_bw.online_default[i], 0);
     }
 }
 
@@ -569,7 +723,7 @@ void bw_set_page(BwPage page)
         bw_show(g_bw.text_page_label, 1);
         bw_show(g_bw.page_title_label, 1);
         bw_show(g_bw.page_body_label, 1);
-        bw_show(g_bw.text_page, 1);
+        bw_show(g_bw.text_tabs, 1);
         bw_show(g_bw.page_title, 1);
         bw_show(g_bw.page_body, 1);
         bw_load_text_editor();
@@ -586,11 +740,37 @@ void bw_set_page(BwPage page)
         bw_show(g_bw.window_style_label, 1);
         bw_show(g_bw.window_style, 1);
         bw_show(g_bw.page_flow_label, 1);
-        bw_show(g_bw.page_flow, 1);
+        bw_show(g_bw.page_flow_count, 1);
+        {
+            int i;
+            for (i = 0; i < 6; ++i) {
+                bw_show(g_bw.page_flow_checks[i], 1);
+            }
+        }
         bw_show(g_bw.theme_colors_label, 1);
-        bw_show(g_bw.theme_colors, 1);
+        bw_show(g_bw.theme_reset, 1);
+        {
+            int i;
+            for (i = 0; i < BW_THEME_COUNT; ++i) {
+                bw_show(g_bw.theme_name[i], 1);
+                bw_show(g_bw.theme_value[i], 1);
+                bw_show(g_bw.theme_pick[i], 1);
+            }
+        }
         bw_show(g_bw.online_components_label, 1);
-        bw_show(g_bw.online_components, 1);
+        {
+            int i;
+            for (i = 0; i < 5; ++i) {
+                bw_show(g_bw.online_header[i], 1);
+            }
+            for (i = 0; i < BW_ONLINE_ROWS; ++i) {
+                bw_show(g_bw.online_name[i], 1);
+                bw_show(g_bw.online_url[i], 1);
+                bw_show(g_bw.online_target[i], 1);
+                bw_show(g_bw.online_page[i], 1);
+                bw_show(g_bw.online_default[i], 1);
+            }
+        }
         bw_show(g_bw.native_box, 1);
         bw_show(g_bw.register_box, 1);
         bw_show(g_bw.windows_box, 1);
@@ -753,12 +933,17 @@ void bw_pick_wizard_image(void)
 {
     OPENFILENAMEA ofn;
     char path[OS_MAX_PATH_LEN];
+    static const char image_filter[] =
+        "Installer images\0*.bmp;*.png\0"
+        "Bitmap images\0*.bmp\0"
+        "PNG images\0*.png\0"
+        "All files\0*.*\0";
 
     memset(path, 0, sizeof(path));
     memset(&ofn, 0, sizeof(ofn));
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = g_bw.window;
-    ofn.lpstrFilter = "Bitmap images\0*.bmp\0All files\0*.*\0";
+    ofn.lpstrFilter = image_filter;
     ofn.lpstrFile = path;
     ofn.nMaxFile = sizeof(path);
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
@@ -772,12 +957,17 @@ void bw_pick_background_image(void)
 {
     OPENFILENAMEA ofn;
     char path[OS_MAX_PATH_LEN];
+    static const char image_filter[] =
+        "Installer images\0*.bmp;*.png\0"
+        "Bitmap images\0*.bmp\0"
+        "PNG images\0*.png\0"
+        "All files\0*.*\0";
 
     memset(path, 0, sizeof(path));
     memset(&ofn, 0, sizeof(ofn));
     ofn.lStructSize = sizeof(ofn);
     ofn.hwndOwner = g_bw.window;
-    ofn.lpstrFilter = "Bitmap images\0*.bmp\0All files\0*.*\0";
+    ofn.lpstrFilter = image_filter;
     ofn.lpstrFile = path;
     ofn.nMaxFile = sizeof(path);
     ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;

@@ -132,6 +132,8 @@ HFONT rt_font(int points, int weight);
 void rt_set_font(HWND hwnd, HFONT font);
 void rt_show(HWND hwnd, int visible);
 int rt_load_text_file(const char *path, HWND target);
+HBITMAP rt_load_image_file(const char *path);
+void rt_dispose_image_loader(void);
 
 HWND rt_label(HWND parent, const char *text, int x, int y, int w, int h, HFONT font);
 HWND rt_button(HWND parent, int id, const char *text, int x, int y, int w, int h);
@@ -140,6 +142,7 @@ HWND rt_edit(HWND parent, int id, const char *text, int x, int y, int w, int h);
 HWND rt_license_box(HWND parent);
 void rt_create_controls(HWND hwnd);
 void rt_paint(HWND hwnd);
+void rt_classic_layout(HWND hwnd);
 int rt_legacy_style_enabled(void);
 void rt_legacy_apply_window_show(int *show_cmd);
 void rt_legacy_layout(HWND hwnd);

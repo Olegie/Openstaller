@@ -128,6 +128,14 @@ void bw_init_config(void)
     bw_set_runtime_exe(g_bw.config.runtime_exe, sizeof(g_bw.config.runtime_exe));
 }
 
+static void bw_template_preview_bounds(RECT *bounds)
+{
+    bounds->left = 774;
+    bounds->top = 152;
+    bounds->right = 1058;
+    bounds->bottom = 452;
+}
+
 static LRESULT CALLBACK bw_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam)
 {
     switch (message) {
@@ -220,31 +228,69 @@ static LRESULT CALLBACK bw_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM l
             }
             return 0;
         case BW_ID_PAGE_FLOW:
-        case BW_ID_THEME_COLORS:
             if (HIWORD(wparam) == EN_CHANGE && g_bw.page == BW_PAGE_OPTIONS) {
                 bw_save_visible_values();
                 InvalidateRect(hwnd, NULL, TRUE);
             }
             return 0;
+        case BW_ID_THEME_RESET:
+            bw_reset_theme_colors();
+            return 0;
         default:
+            if (LOWORD(wparam) >= BW_ID_THEME_PICK_BASE &&
+                LOWORD(wparam) < BW_ID_THEME_PICK_BASE + BW_THEME_COUNT) {
+                bw_pick_theme_color((int)(LOWORD(wparam) - BW_ID_THEME_PICK_BASE));
+                return 0;
+            }
+            if (LOWORD(wparam) >= BW_ID_PAGE_FLOW_BASE &&
+                LOWORD(wparam) < BW_ID_PAGE_FLOW_BASE + 6 &&
+                g_bw.page == BW_PAGE_OPTIONS) {
+                bw_save_visible_values();
+                bw_load_page_flow_editor();
+                InvalidateRect(hwnd, NULL, TRUE);
+                return 0;
+            }
+            if (LOWORD(wparam) >= BW_ID_THEME_COLORS &&
+                LOWORD(wparam) < BW_ID_THEME_COLORS + BW_THEME_COUNT &&
+                HIWORD(wparam) == EN_CHANGE &&
+                g_bw.page == BW_PAGE_OPTIONS) {
+                bw_save_visible_values();
+                InvalidateRect(hwnd, NULL, TRUE);
+                return 0;
+            }
             break;
         }
         break;
+
+    case WM_NOTIFY: {
+        NMHDR *header = (NMHDR *)lparam;
+
+        if (header != NULL &&
+            header->idFrom == BW_ID_TEXT_PAGE &&
+            header->code == TCN_SELCHANGE) {
+            int selected = TabCtrl_GetCurSel(g_bw.text_tabs);
+
+            if (selected >= 0 && selected <= 5) {
+                bw_save_text_editor();
+                g_bw.selected_text_page = selected;
+                bw_load_text_editor();
+            }
+            return 0;
+        }
+        break;
+    }
 
     case WM_LBUTTONDOWN: {
         int x = (short)LOWORD(lparam);
         int y = (short)HIWORD(lparam);
         int step = bw_step_from_point(x, y);
 
-        if (g_bw.page == BW_PAGE_OPTIONS && y >= 144 && y <= 182) {
-            int style = -1;
-            if (x >= 626 && x <= 674) {
-                style = OS_INSTALLER_STYLE_CLASSIC;
-            } else if (x >= 684 && x <= 732) {
-                style = OS_INSTALLER_STYLE_MODERN;
-            } else if (x >= 742 && x <= 790) {
-                style = OS_INSTALLER_STYLE_LEGACY;
-            }
+        if (g_bw.page == BW_PAGE_OPTIONS) {
+            RECT bounds;
+            int style;
+
+            bw_template_preview_bounds(&bounds);
+            style = bw_template_preview_style_from_point(&bounds, x, y);
             if (style >= 0) {
                 SendMessageA(g_bw.installer_style, CB_SETCURSEL, style, 0);
                 bw_save_visible_values();
@@ -260,12 +306,28 @@ static LRESULT CALLBACK bw_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM l
         break;
     }
 
+    case WM_SETCURSOR:
+        if (LOWORD(lparam) == HTCLIENT && g_bw.page == BW_PAGE_OPTIONS) {
+            POINT point;
+            RECT bounds;
+
+            GetCursorPos(&point);
+            ScreenToClient(hwnd, &point);
+            bw_template_preview_bounds(&bounds);
+            if (bw_template_preview_style_from_point(&bounds, point.x, point.y) >= 0) {
+                SetCursor(LoadCursor(NULL, IDC_HAND));
+                return TRUE;
+            }
+        }
+        break;
+
     case WM_CTLCOLORSTATIC: {
         HDC dc = (HDC)wparam;
         HWND control = (HWND)lparam;
         SetTextColor(dc, RGB(0, 0, 0));
         SetBkMode(dc, TRANSPARENT);
-        return (LRESULT)g_bw.brush_bg;
+        (void)control;
+        return (LRESULT)GetStockObject(NULL_BRUSH);
     }
 
     case WM_ERASEBKGND: {
@@ -292,6 +354,7 @@ static LRESULT CALLBACK bw_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM l
         DeleteObject(g_bw.font_title);
         DeleteObject(g_bw.brush_bg);
         DeleteObject(g_bw.brush_white);
+        bw_dispose_template_preview();
         PostQuitMessage(0);
         return 0;
 
@@ -307,6 +370,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPSTR cmd_line, int s
     WNDCLASSEXA wc;
     HWND hwnd;
     MSG msg;
+    INITCOMMONCONTROLSEX icc;
     DWORD window_style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
     DWORD window_ex_style = WS_EX_DLGMODALFRAME;
     RECT window_rect = {0, 0, BW_W, BW_H};
@@ -317,6 +381,10 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPSTR cmd_line, int s
     memset(&g_bw, 0, sizeof(g_bw));
     g_bw.instance = instance;
     os_win32_i18n_init(instance);
+    memset(&icc, 0, sizeof(icc));
+    icc.dwSize = sizeof(icc);
+    icc.dwICC = ICC_TAB_CLASSES;
+    InitCommonControlsEx(&icc);
     bw_init_config();
     g_bw.icon_big = bw_load_icon_file(g_bw.config.installer_icon_file, 32);
     g_bw.icon_small = bw_load_icon_file(g_bw.config.installer_icon_file, 16);

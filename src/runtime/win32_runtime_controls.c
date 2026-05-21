@@ -101,7 +101,8 @@ static HWND rt_progress_log_box(HWND parent)
     HWND hwnd = CreateWindowExA(WS_EX_CLIENTEDGE,
                                "EDIT",
                                "",
-                               WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
+                               WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL |
+                                   ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL | ES_AUTOHSCROLL,
                                202,
                                270,
                                424,
@@ -113,6 +114,95 @@ static HWND rt_progress_log_box(HWND parent)
     rt_set_font(hwnd, g_rt.font_body);
     SendMessageA(hwnd, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(6, 6));
     return hwnd;
+}
+
+static int rt_classic_footer_y(HWND hwnd)
+{
+    RECT client;
+    int footer_y;
+
+    GetClientRect(hwnd, &client);
+    footer_y = client.bottom - (RT_H - RT_FOOTER_Y);
+    if (footer_y < 312) {
+        footer_y = 312;
+    }
+    return footer_y;
+}
+
+void rt_classic_layout(HWND hwnd)
+{
+    RECT client;
+    RtPageKind kind;
+    int footer_y;
+    int content_x = RT_SIDE_W + 26;
+    int content_right;
+    int content_w;
+    int button_y;
+    int progress;
+    int license;
+    size_t i;
+
+    if (rt_modern_style_enabled() || rt_legacy_style_enabled() || hwnd == NULL || g_rt.back == NULL) {
+        return;
+    }
+
+    GetClientRect(hwnd, &client);
+    footer_y = rt_classic_footer_y(hwnd);
+    content_right = client.right - 46;
+    if (content_right < content_x + 360) {
+        content_right = content_x + 360;
+    }
+    content_w = content_right - content_x;
+    button_y = footer_y + 28;
+    kind = rt_current_page_kind();
+    progress = kind == RT_PAGE_PROGRESS || kind == RT_PAGE_UNINSTALL_PROGRESS;
+    license = kind == RT_PAGE_LICENSE;
+
+    MoveWindow(g_rt.title, content_x, 22, content_w, 24, TRUE);
+    MoveWindow(g_rt.subtitle, content_x, 52, content_w, 36, TRUE);
+    MoveWindow(g_rt.back, client.right - 286, button_y, 82, 26, TRUE);
+    MoveWindow(g_rt.next, client.right - 194, button_y, 82, 26, TRUE);
+    MoveWindow(g_rt.cancel, client.right - 100, button_y, 82, 26, TRUE);
+
+    if (progress) {
+        int log_h = footer_y - 288;
+
+        MoveWindow(g_rt.body, content_x, 124, content_w, 44, TRUE);
+        MoveWindow(g_rt.progress, content_x, 184, content_w, 22, TRUE);
+        MoveWindow(g_rt.progress_text, content_x, 214, content_w, 22, TRUE);
+        MoveWindow(g_rt.progress_detail, content_x, 238, content_w - 118, 44, TRUE);
+        MoveWindow(g_rt.progress_more, content_x + content_w - 106, 238, 106, 26, TRUE);
+        if (log_h < 54) {
+            log_h = 54;
+        }
+        MoveWindow(g_rt.progress_log, content_x, 270, content_w, log_h, TRUE);
+    } else {
+        int body_h = footer_y - 142;
+        int license_h = footer_y - 176;
+        int accept_y = footer_y - 96;
+
+        if (body_h < 90) {
+            body_h = 90;
+        }
+        if (license_h < 96) {
+            license_h = 96;
+        }
+        MoveWindow(g_rt.body, content_x, 124, content_w, body_h, TRUE);
+        MoveWindow(g_rt.license, content_x, 112, content_w, license_h, TRUE);
+        MoveWindow(g_rt.accept, content_x, accept_y, 260, 22, TRUE);
+        MoveWindow(g_rt.install_dir, content_x, 180, content_w - 92, 24, TRUE);
+        MoveWindow(g_rt.browse, content_x + content_w - 80, 179, 80, 26, TRUE);
+        MoveWindow(g_rt.component_main, content_x + 20, 154, content_w - 40, 22, TRUE);
+        MoveWindow(g_rt.component_reg, content_x + 20, 180, content_w - 40, 22, TRUE);
+        for (i = 0; i < OS_MAX_ONLINE_COMPONENTS; ++i) {
+            MoveWindow(g_rt.online_components[i], content_x + 20, 208 + (int)i * 24, content_w - 40, 22, TRUE);
+        }
+        if (!license) {
+            MoveWindow(g_rt.accept, content_x, accept_y, 260, 22, TRUE);
+        }
+    }
+
+    InvalidateRect(hwnd, NULL, TRUE);
 }
 
 void rt_create_controls(HWND hwnd)
@@ -177,16 +267,30 @@ void rt_paint(HWND hwnd)
 
     PAINTSTRUCT ps;
     HDC dc = BeginPaint(hwnd, &ps);
-    RECT header = {RT_SIDE_W, 0, RT_W, 96};
-    RECT background = {RT_SIDE_W, 96, RT_W, RT_FOOTER_Y};
-    RECT left = {0, 0, RT_SIDE_W, RT_H};
-    RECT footer = {0, RT_FOOTER_Y, RT_W, RT_H};
+    RECT client;
+    int footer_y = rt_classic_footer_y(hwnd);
+    RECT header;
+    RECT background;
+    RECT footer;
     RECT top_line = {0, 0, RT_SIDE_W, 5};
     HBRUSH blue = CreateSolidBrush(rt_theme_color(g_rt.info.theme.sidebar, RGB(21, 78, 158)));
     HBRUSH dark = CreateSolidBrush(rt_theme_color(g_rt.info.theme.sidebar_dark, RGB(8, 39, 102)));
-    HBRUSH overlay = CreateSolidBrush(RGB(10, 34, 76));
     HPEN pen = CreatePen(PS_SOLID, 1, RGB(160, 160, 160));
     HFONT old_font;
+
+    GetClientRect(hwnd, &client);
+    header.left = RT_SIDE_W;
+    header.top = 0;
+    header.right = client.right;
+    header.bottom = 96;
+    background.left = RT_SIDE_W;
+    background.top = 96;
+    background.right = client.right;
+    background.bottom = footer_y;
+    footer.left = 0;
+    footer.top = footer_y;
+    footer.right = client.right;
+    footer.bottom = client.bottom;
 
     FillRect(dc, &header, g_rt.brush_white);
     if (g_rt.side_image != NULL) {
@@ -194,12 +298,14 @@ void rt_paint(HWND hwnd)
         BITMAP bm;
         HGDIOBJ old_bitmap = SelectObject(mem, g_rt.side_image);
         GetObject(g_rt.side_image, sizeof(bm), &bm);
-        StretchBlt(dc, 0, 0, RT_SIDE_W, RT_FOOTER_Y, mem, 0, 0, bm.bmWidth, bm.bmHeight, SRCCOPY);
+        SetStretchBltMode(dc, HALFTONE);
+        SetBrushOrgEx(dc, 0, 0, NULL);
+        StretchBlt(dc, 0, 0, RT_SIDE_W, footer_y, mem, 0, 0, bm.bmWidth, bm.bmHeight, SRCCOPY);
         SelectObject(mem, old_bitmap);
         DeleteDC(mem);
     } else {
-        RECT top = {0, 0, RT_SIDE_W, RT_FOOTER_Y / 2};
-        RECT bottom = {0, RT_FOOTER_Y / 2, RT_SIDE_W, RT_FOOTER_Y};
+        RECT top = {0, 0, RT_SIDE_W, footer_y / 2};
+        RECT bottom = {0, footer_y / 2, RT_SIDE_W, footer_y};
         FillRect(dc, &top, blue);
         FillRect(dc, &bottom, dark);
     }
@@ -247,10 +353,6 @@ void rt_paint(HWND hwnd)
                   DT_LEFT | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
     }
     SelectObject(dc, old_font);
-    if (g_rt.side_image != NULL) {
-        RECT shade = {0, RT_FOOTER_Y - 72, RT_SIDE_W, RT_FOOTER_Y};
-        FillRect(dc, &shade, overlay);
-    }
     {
         HBRUSH footer_brush = CreateSolidBrush(rt_theme_color(g_rt.info.theme.background, RGB(240, 240, 240)));
         FillRect(dc, &footer, footer_brush);
@@ -258,14 +360,13 @@ void rt_paint(HWND hwnd)
     }
     SelectObject(dc, pen);
     MoveToEx(dc, RT_SIDE_W, 96, NULL);
-    LineTo(dc, RT_W, 96);
-    MoveToEx(dc, 0, RT_FOOTER_Y, NULL);
-    LineTo(dc, RT_W, RT_FOOTER_Y);
+    LineTo(dc, client.right, 96);
+    MoveToEx(dc, 0, footer_y, NULL);
+    LineTo(dc, client.right, footer_y);
 
     DeleteObject(pen);
     DeleteObject(blue);
     DeleteObject(dark);
-    DeleteObject(overlay);
     EndPaint(hwnd, &ps);
 }
 
@@ -371,8 +472,12 @@ void rt_apply_progress_update(void)
         snprintf(log_line, sizeof(log_line), "%3d%%  %s", percent, action);
     }
     rt_append_log_line(log_line);
+    SendMessageA(g_rt.progress_log, WM_SETREDRAW, FALSE, 0);
     SetWindowTextA(g_rt.progress_log, g_rt.progress_log_text);
-    SendMessageA(g_rt.progress_log, EM_LINESCROLL, 0, 0x7fff);
+    SendMessageA(g_rt.progress_log, EM_SETSEL, (WPARAM)-1, (LPARAM)-1);
+    SendMessageA(g_rt.progress_log, EM_SCROLLCARET, 0, 0);
+    SendMessageA(g_rt.progress_log, WM_SETREDRAW, TRUE, 0);
+    InvalidateRect(g_rt.progress_log, NULL, TRUE);
 }
 
 void rt_toggle_progress_details(void)
@@ -380,6 +485,8 @@ void rt_toggle_progress_details(void)
     g_rt.progress_expanded = !g_rt.progress_expanded;
     SetWindowTextA(g_rt.progress_more, g_rt.progress_expanded ? "Hide details" : "Details");
     rt_show(g_rt.progress_log, g_rt.progress_expanded);
+    InvalidateRect(g_rt.progress_log, NULL, TRUE);
+    rt_classic_layout(g_rt.window);
     if (rt_modern_style_enabled()) {
         rt_modern_layout(g_rt.window);
     }

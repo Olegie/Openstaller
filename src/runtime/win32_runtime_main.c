@@ -144,6 +144,7 @@ static LRESULT CALLBACK rt_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM l
 
     case RT_WM_PROGRESS_UPDATE:
         rt_apply_progress_update();
+        rt_classic_layout(hwnd);
         if (rt_modern_style_enabled()) {
             rt_modern_layout(hwnd);
         }
@@ -166,6 +167,10 @@ static LRESULT CALLBACK rt_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM l
         }
 
         SetTextColor(dc, rt_theme_color(g_rt.info.theme.text, RGB(0, 0, 0)));
+        if (control == g_rt.license || control == g_rt.progress_log) {
+            SetBkColor(dc, rt_theme_color(g_rt.info.theme.panel, RGB(255, 255, 255)));
+            return (LRESULT)g_rt.brush_white;
+        }
         if (control == g_rt.title || control == g_rt.subtitle) {
             SetBkColor(dc, RGB(255, 255, 255));
             return (LRESULT)g_rt.brush_white;
@@ -189,6 +194,7 @@ static LRESULT CALLBACK rt_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM l
     }
 
     case WM_SIZE:
+        rt_classic_layout(hwnd);
         if (rt_modern_style_enabled()) {
             rt_modern_layout(hwnd);
         }
@@ -196,6 +202,15 @@ static LRESULT CALLBACK rt_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM l
             rt_legacy_layout(hwnd);
         }
         return 0;
+
+    case WM_GETMINMAXINFO: {
+        MINMAXINFO *mmi = (MINMAXINFO *)lparam;
+        if (mmi != NULL) {
+            mmi->ptMinTrackSize.x = rt_modern_style_enabled() ? 820 : 700;
+            mmi->ptMinTrackSize.y = rt_modern_style_enabled() ? 560 : 500;
+        }
+        return 0;
+    }
 
     case WM_PAINT:
         rt_paint(hwnd);
@@ -208,6 +223,7 @@ static LRESULT CALLBACK rt_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM l
         if (g_rt.background_image != NULL) {
             DeleteObject(g_rt.background_image);
         }
+        rt_dispose_image_loader();
         if (g_rt.license_path[0] != '\0' && g_rt.embedded_package) {
             DeleteFileA(g_rt.license_path);
         }
@@ -300,12 +316,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPSTR cmd_line, int s
         if (g_rt.info.has_wizard_image &&
             rt_temp_file(g_rt.image_path, sizeof(g_rt.image_path), "osi") == 0 &&
             os_extract_embedded_wizard_image(g_rt.self_path, g_rt.image_path, load_message, sizeof(load_message)) == 0) {
-            g_rt.side_image = (HBITMAP)LoadImageA(NULL,
-                                                 g_rt.image_path,
-                                                 IMAGE_BITMAP,
-                                                 0,
-                                                 0,
-                                                 LR_LOADFROMFILE);
+            g_rt.side_image = rt_load_image_file(g_rt.image_path);
         }
 
         if (g_rt.info.has_background_image &&
@@ -314,12 +325,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPSTR cmd_line, int s
                                                  g_rt.background_path,
                                                  load_message,
                                                  sizeof(load_message)) == 0) {
-            g_rt.background_image = (HBITMAP)LoadImageA(NULL,
-                                                       g_rt.background_path,
-                                                       IMAGE_BITMAP,
-                                                       0,
-                                                       0,
-                                                       LR_LOADFROMFILE);
+            g_rt.background_image = rt_load_image_file(g_rt.background_path);
         }
     } else if (rt_join(g_rt.license_path, sizeof(g_rt.license_path), g_rt.package_dir, "LICENSE.txt") == 0 &&
                GetFileAttributesA(g_rt.license_path) != INVALID_FILE_ATTRIBUTES) {

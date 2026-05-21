@@ -106,6 +106,75 @@ static void rt_add_page(RtPageKind kind)
     }
 }
 
+static int rt_online_page_is(const OsOnlineComponent *component, const char *name)
+{
+    if (component == NULL) {
+        return 0;
+    }
+    if (component->page[0] == '\0') {
+        return rt_ieq(name, "components");
+    }
+    return rt_ieq(component->page, name);
+}
+
+static int rt_online_matches_page(const OsOnlineComponent *component, RtPageKind kind)
+{
+    if (kind == RT_PAGE_COMPONENTS) {
+        return rt_online_page_is(component, "components");
+    }
+    if (kind == RT_PAGE_READY) {
+        return rt_online_page_is(component, "ready");
+    }
+    return 0;
+}
+
+static int rt_online_has_visible_page(const OsOnlineComponent *component, int *page_index)
+{
+    int page;
+
+    if (page_index != NULL) {
+        *page_index = -1;
+    }
+    if (rt_online_page_is(component, "ready")) {
+        page = rt_find_page_kind(RT_PAGE_READY);
+    } else if (rt_online_page_is(component, "components")) {
+        page = rt_find_page_kind(RT_PAGE_COMPONENTS);
+    } else {
+        page = -1;
+    }
+    if (page_index != NULL) {
+        *page_index = page;
+    }
+    return page >= 0;
+}
+
+static void rt_show_online_component_checklist(RtPageKind kind)
+{
+    size_t i;
+
+    for (i = 0; i < g_rt.info.online_component_count && i < OS_MAX_ONLINE_COMPONENTS; ++i) {
+        const OsOnlineComponent *component = &g_rt.info.online_components[i];
+        char label[OS_MAX_NAME_LEN + 80];
+
+        if (component->url[0] == '\0' || !rt_online_matches_page(component, kind)) {
+            continue;
+        }
+        snprintf(label,
+                 sizeof(label),
+                 "%s%s%s",
+                 component->name[0] != '\0' ? component->name : "Online component",
+                 component->description[0] != '\0' ? " - " : "",
+                 component->description);
+        SetWindowTextA(g_rt.online_components[i], label);
+        SendMessageA(g_rt.online_components[i],
+                     BM_SETCHECK,
+                     component->selected_by_default ? BST_CHECKED : BST_UNCHECKED,
+                     0);
+        EnableWindow(g_rt.online_components[i], TRUE);
+        rt_show(g_rt.online_components[i], 1);
+    }
+}
+
 void rt_build_page_flow(void)
 {
     uint32_t flags;
@@ -254,6 +323,7 @@ void rt_set_page(void)
         if (rt_legacy_style_enabled()) {
             rt_legacy_layout(g_rt.window);
         }
+        rt_classic_layout(g_rt.window);
         return;
     }
 
@@ -270,39 +340,20 @@ void rt_set_page(void)
         rt_show(g_rt.install_dir, 1);
         rt_show(g_rt.browse, 1);
     } else if (kind == RT_PAGE_COMPONENTS) {
-        size_t i;
-
         rt_page_text(g_rt.info.components_title, g_rt.info.components_text);
         rt_show(g_rt.body, 0);
         rt_show(g_rt.component_main, 1);
         rt_show(g_rt.component_reg, 1);
         EnableWindow(g_rt.component_main, FALSE);
         EnableWindow(g_rt.component_reg, FALSE);
-        for (i = 0; i < g_rt.info.online_component_count && i < OS_MAX_ONLINE_COMPONENTS; ++i) {
-            const OsOnlineComponent *component = &g_rt.info.online_components[i];
-            char label[OS_MAX_NAME_LEN + 48];
-
-            if (component->url[0] == '\0') {
-                continue;
-            }
-            snprintf(label,
-                     sizeof(label),
-                     "%s",
-                     component->name[0] != '\0' ? component->name : "Online component");
-            SetWindowTextA(g_rt.online_components[i], label);
-            SendMessageA(g_rt.online_components[i],
-                         BM_SETCHECK,
-                         component->selected_by_default ? BST_CHECKED : BST_UNCHECKED,
-                         0);
-            EnableWindow(g_rt.online_components[i], TRUE);
-            rt_show(g_rt.online_components[i], 1);
-        }
+        rt_show_online_component_checklist(RT_PAGE_COMPONENTS);
     } else if (kind == RT_PAGE_READY) {
         char install_dir[OS_MAX_PATH_LEN];
         GetWindowTextA(g_rt.install_dir, install_dir, sizeof(install_dir));
         rt_page_text(g_rt.info.ready_title, g_rt.info.ready_text);
         snprintf(text, sizeof(text), "%s\r\n\r\nDestination folder:\r\n%s", g_rt.info.ready_text, install_dir);
         SetWindowTextA(g_rt.body, text);
+        rt_show_online_component_checklist(RT_PAGE_READY);
         os_win32_set_window_text(g_rt.next, OS_WIN32_TEXT_INSTALL);
     } else if (kind == RT_PAGE_PROGRESS) {
         rt_page_text("Installing", "Please wait while setup installs the application.");
@@ -330,6 +381,7 @@ void rt_set_page(void)
     if (rt_legacy_style_enabled()) {
         rt_legacy_layout(g_rt.window);
     }
+    rt_classic_layout(g_rt.window);
 }
 
 void rt_pick_folder(void)
@@ -357,7 +409,6 @@ void rt_pick_folder(void)
 void rt_run_operation(void)
 {
     HANDLE thread;
-    int components_page = rt_find_page_kind(RT_PAGE_COMPONENTS);
 
     if (g_rt.operation_done || g_rt.operation_started) {
         return;
@@ -374,9 +425,16 @@ void rt_run_operation(void)
         size_t i;
 
         for (i = 0; i < g_rt.info.online_component_count && i < OS_MAX_ONLINE_COMPONENTS; ++i) {
-            int selected = components_page >= 0 && g_rt.online_components[i] != NULL
-                               ? SendMessageA(g_rt.online_components[i], BM_GETCHECK, 0, 0) == BST_CHECKED
-                               : g_rt.info.online_components[i].selected_by_default;
+            int selected;
+            int page_index = -1;
+
+            if (rt_online_has_visible_page(&g_rt.info.online_components[i], &page_index) &&
+                page_index >= 0 &&
+                g_rt.online_components[i] != NULL) {
+                selected = SendMessageA(g_rt.online_components[i], BM_GETCHECK, 0, 0) == BST_CHECKED;
+            } else {
+                selected = g_rt.info.online_components[i].selected_by_default;
+            }
 
             if (selected) {
                 g_rt.online_component_mask |= ((uint64_t)1u << i);

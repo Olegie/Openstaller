@@ -155,7 +155,7 @@ if (!(Test-Path -LiteralPath $builder)) {
     throw "Build the GUI first. Missing $builder"
 }
 
-Capture-Window -Exe $builder -OutFile (Join-Path $assets "screenshot-builder.png") -Width 886 -Height 600 -Move -NextClicks 3 -NextButtonId 3002
+Capture-Window -Exe $builder -OutFile (Join-Path $assets "screenshot-builder.png") -Width 1150 -Height 780 -Move -NextClicks 3 -NextButtonId 3002
 
 foreach ($style in @("classic", "modern", "legacy")) {
     $out = Join-Path $tmp $style
@@ -181,6 +181,7 @@ foreach ($style in @("classic", "modern", "legacy")) {
         --theme-legacy-top "#0527D8" `
         --theme-legacy-bottom "#000018" `
         --online-optional "Language Pack" "https://github.com/Olegie/Openstaller/releases/download/demo/language-pack.zip" "extras\language-pack.zip" `
+        --online-page ready `
         --online-description "Optional language resources downloaded during setup" | Out-Host
 
     if ($LASTEXITCODE -ne 0) {

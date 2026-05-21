@@ -42,6 +42,7 @@ static void print_help(void)
     puts("  --online-component NAME URL TARGET  Add a selected online download");
     puts("  --online-optional NAME URL TARGET   Add an optional online download");
     puts("  --online-description TEXT           Description for the last online download");
+    puts("  --online-page PAGE                  Ask page for last download: components, ready, or install");
     puts("  --installer-icon FILE Embed a custom ICO icon into installer.exe");
     puts("  --uninstaller-icon FILE Embed a custom ICO icon into uninstaller.exe");
     puts("  --launcher PATH       Relative launcher path used for Unix .desktop registration");
@@ -313,6 +314,7 @@ static int cli_add_online_component(OsProjectConfig *config,
         return -1;
     }
     component->selected_by_default = selected_by_default;
+    copy_arg(component->page, sizeof(component->page), "components", "--online-page");
     return 0;
 }
 
@@ -480,6 +482,24 @@ int main(int argc, char **argv)
             }
             if (copy_arg(config.online_components[config.online_component_count - 1].description,
                          sizeof(config.online_components[0].description),
+                         argv[++i],
+                         arg) != 0) {
+                return 2;
+            }
+            continue;
+        }
+
+        if (strcmp(arg, "--online-page") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "Missing value for %s.\n", arg);
+                return 2;
+            }
+            if (config.online_component_count == 0) {
+                fprintf(stderr, "%s must follow an online component.\n", arg);
+                return 2;
+            }
+            if (copy_arg(config.online_components[config.online_component_count - 1].page,
+                         sizeof(config.online_components[0].page),
                          argv[++i],
                          arg) != 0) {
                 return 2;

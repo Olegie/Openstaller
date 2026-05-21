@@ -776,6 +776,8 @@ static int os_write_manifest(const OsProjectConfig *config,
         os_manifest_write_value(file, key, config->online_components[i].url);
         snprintf(key, sizeof(key), "online.%llu.target", (unsigned long long)i);
         os_manifest_write_value(file, key, config->online_components[i].target_path);
+        snprintf(key, sizeof(key), "online.%llu.page", (unsigned long long)i);
+        os_manifest_write_value(file, key, config->online_components[i].page);
         fprintf(file,
                 "online.%llu.default=%d\n",
                 (unsigned long long)i,
@@ -902,6 +904,7 @@ int os_generate_project(const OsProjectConfig *config, OsGenerationResult *resul
             installer_id = os_hash_bytes(component->description, strlen(component->description), installer_id);
             installer_id = os_hash_bytes(component->url, strlen(component->url), installer_id);
             installer_id = os_hash_bytes(component->target_path, strlen(component->target_path), installer_id);
+            installer_id = os_hash_bytes(component->page, strlen(component->page), installer_id);
             installer_id = os_hash_bytes(&selected, sizeof(selected), installer_id);
         }
     }

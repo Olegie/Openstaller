@@ -165,6 +165,9 @@ static int manifest_set_online(OsPackageManifest *manifest, const char *key, con
     if (strcmp(field, "target") == 0) {
         return manifest_decode(component->target_path, sizeof(component->target_path), value);
     }
+    if (strcmp(field, "page") == 0 || strcmp(field, "ask_page") == 0) {
+        return manifest_decode(component->page, sizeof(component->page), value);
+    }
     if (strcmp(field, "default") == 0) {
         component->selected_by_default = atoi(value) != 0;
         return 0;
