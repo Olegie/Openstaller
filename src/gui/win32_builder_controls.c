@@ -240,10 +240,34 @@ void bw_create_controls(HWND hwnd)
     g_bw.launcher_label = bw_label(hwnd, "Program to run", 292, 336, 160, 20, g_bw.font_body);
     g_bw.launcher = bw_edit(hwnd, 0, "", 484, 332, 428, 26, 0);
     g_bw.installer_icon_label = bw_label(hwnd, "Installer icon", 292, 392, 160, 20, g_bw.font_body);
-    g_bw.installer_icon = bw_edit(hwnd, 0, "", 484, 388, 330, 26, 0);
+    g_bw.installer_icon = bw_edit(hwnd, BW_ID_INSTALLER_ICON_EDIT, "", 484, 388, 292, 26, 0);
+    g_bw.installer_icon_preview = CreateWindowExA(WS_EX_CLIENTEDGE,
+                                                  "STATIC",
+                                                  "",
+                                                  WS_CHILD | WS_VISIBLE | SS_ICON | SS_CENTERIMAGE,
+                                                  786,
+                                                  385,
+                                                  32,
+                                                  32,
+                                                  hwnd,
+                                                  NULL,
+                                                  g_bw.instance,
+                                                  NULL);
     bw_button(hwnd, BW_ID_INSTALLER_ICON_BROWSE, os_win32_text(OS_WIN32_TEXT_BROWSE), 828, 387, 84, 28);
     g_bw.uninstaller_icon_label = bw_label(hwnd, "Uninstaller icon", 292, 432, 160, 20, g_bw.font_body);
-    g_bw.uninstaller_icon = bw_edit(hwnd, 0, "", 484, 428, 330, 26, 0);
+    g_bw.uninstaller_icon = bw_edit(hwnd, BW_ID_UNINSTALLER_ICON_EDIT, "", 484, 428, 292, 26, 0);
+    g_bw.uninstaller_icon_preview = CreateWindowExA(WS_EX_CLIENTEDGE,
+                                                    "STATIC",
+                                                    "",
+                                                    WS_CHILD | WS_VISIBLE | SS_ICON | SS_CENTERIMAGE,
+                                                    786,
+                                                    425,
+                                                    32,
+                                                    32,
+                                                    hwnd,
+                                                    NULL,
+                                                    g_bw.instance,
+                                                    NULL);
     bw_button(hwnd, BW_ID_UNINSTALLER_ICON_BROWSE, os_win32_text(OS_WIN32_TEXT_BROWSE), 828, 427, 84, 28);
 
     g_bw.text_page_label = bw_label(hwnd, "Edit page", 310, 150, 90, 20, g_bw.font_body);

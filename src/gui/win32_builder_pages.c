@@ -1,5 +1,6 @@
 #include "win32_builder.h"
 #include "win32_i18n.h"
+#include "openstaller_icon.h"
 
 #include <commdlg.h>
 #include <objbase.h>
@@ -20,6 +21,60 @@ static void bw_get(HWND hwnd, char *out, size_t out_size)
     }
     GetWindowTextA(hwnd, out, (int)out_size);
     out[out_size - 1] = '\0';
+}
+
+static HICON bw_load_preview_icon(const char *path, int uninstall_icon)
+{
+    HICON icon = NULL;
+
+    if (path != NULL && path[0] != '\0') {
+        icon = (HICON)LoadImageA(NULL,
+                                 path,
+                                 IMAGE_ICON,
+                                 24,
+                                 24,
+                                 LR_LOADFROMFILE | LR_DEFAULTCOLOR);
+    }
+
+    if (icon == NULL) {
+        icon = os_icon_create_default_hicon(24, uninstall_icon);
+    }
+
+    return icon;
+}
+
+static void bw_set_icon_preview(HWND preview, HWND edit, HICON *slot, int uninstall_icon)
+{
+    char path[OS_MAX_PATH_LEN];
+    HICON icon;
+
+    if (preview == NULL || edit == NULL || slot == NULL) {
+        return;
+    }
+
+    bw_get(edit, path, sizeof(path));
+    icon = bw_load_preview_icon(path, uninstall_icon);
+    if (icon == NULL) {
+        return;
+    }
+
+    SendMessageA(preview, STM_SETICON, (WPARAM)icon, 0);
+    if (*slot != NULL) {
+        DestroyIcon(*slot);
+    }
+    *slot = icon;
+}
+
+void bw_update_icon_previews(void)
+{
+    bw_set_icon_preview(g_bw.installer_icon_preview,
+                        g_bw.installer_icon,
+                        &g_bw.installer_icon_preview_handle,
+                        0);
+    bw_set_icon_preview(g_bw.uninstaller_icon_preview,
+                        g_bw.uninstaller_icon,
+                        &g_bw.uninstaller_icon_preview_handle,
+                        1);
 }
 
 static void bw_trim(char *text)
@@ -628,6 +683,7 @@ static void bw_hide_all_page_controls(void)
         g_bw.launcher_label, g_bw.installer_icon_label, g_bw.uninstaller_icon_label,
         g_bw.source_dir, g_bw.output_dir, g_bw.license_file, g_bw.wizard_image,
         g_bw.background_image, g_bw.launcher, g_bw.installer_icon, g_bw.uninstaller_icon,
+        g_bw.installer_icon_preview, g_bw.uninstaller_icon_preview,
         g_bw.text_page_label, g_bw.page_title_label, g_bw.page_body_label,
         g_bw.text_page, g_bw.text_tabs, g_bw.page_title, g_bw.page_body,
         g_bw.installer_style_label, g_bw.installer_style,
@@ -710,6 +766,8 @@ void bw_set_page(BwPage page)
         bw_show(g_bw.launcher, 1);
         bw_show(g_bw.installer_icon, 1);
         bw_show(g_bw.uninstaller_icon, 1);
+        bw_show(g_bw.installer_icon_preview, 1);
+        bw_show(g_bw.uninstaller_icon_preview, 1);
         bw_show(GetDlgItem(g_bw.window, BW_ID_SOURCE_BROWSE), 1);
         bw_show(GetDlgItem(g_bw.window, BW_ID_OUTPUT_BROWSE), 1);
         bw_show(GetDlgItem(g_bw.window, BW_ID_LICENSE_BROWSE), 1);
@@ -717,6 +775,7 @@ void bw_set_page(BwPage page)
         bw_show(GetDlgItem(g_bw.window, BW_ID_BACKGROUND_IMAGE_BROWSE), 1);
         bw_show(GetDlgItem(g_bw.window, BW_ID_INSTALLER_ICON_BROWSE), 1);
         bw_show(GetDlgItem(g_bw.window, BW_ID_UNINSTALLER_ICON_BROWSE), 1);
+        bw_update_icon_previews();
     } else if (page == BW_PAGE_TEXTS) {
         SetWindowTextA(g_bw.title, "Wizard Pages");
         SetWindowTextA(g_bw.subtitle, "Write the text users will see inside the installer and uninstaller.");
@@ -993,6 +1052,7 @@ static void bw_pick_icon_into(HWND target)
 
     if (GetOpenFileNameA(&ofn)) {
         SetWindowTextA(target, path);
+        bw_update_icon_previews();
     }
 }
 

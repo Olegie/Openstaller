@@ -39,6 +39,8 @@
 #define BW_ID_PAGE_FLOW 3017
 #define BW_ID_THEME_COLORS 3018
 #define BW_ID_THEME_RESET 3030
+#define BW_ID_INSTALLER_ICON_EDIT 3031
+#define BW_ID_UNINSTALLER_ICON_EDIT 3032
 #define BW_ID_THEME_PICK_BASE 3100
 #define BW_ID_ONLINE_PAGE_BASE 3200
 #define BW_ID_PAGE_FLOW_BASE 3300
@@ -83,6 +85,8 @@ typedef struct BuilderState {
     HWND background_image;
     HWND installer_icon;
     HWND uninstaller_icon;
+    HWND installer_icon_preview;
+    HWND uninstaller_icon_preview;
     HWND launcher;
     HWND text_page_label;
     HWND page_title_label;
@@ -126,6 +130,8 @@ typedef struct BuilderState {
     HFONT font_title;
     HICON icon_big;
     HICON icon_small;
+    HICON installer_icon_preview_handle;
+    HICON uninstaller_icon_preview_handle;
     HBRUSH brush_bg;
     HBRUSH brush_white;
     OsProjectConfig config;
@@ -160,6 +166,7 @@ void bw_pick_wizard_image(void);
 void bw_pick_background_image(void);
 void bw_pick_installer_icon(void);
 void bw_pick_uninstaller_icon(void);
+void bw_update_icon_previews(void);
 int bw_ui_font_selection(void);
 void bw_save_visible_values(void);
 void bw_load_text_editor(void);

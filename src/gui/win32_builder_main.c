@@ -156,6 +156,7 @@ static LRESULT CALLBACK bw_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM l
         SetWindowTextA(g_bw.background_image, g_bw.config.background_image_file);
         SetWindowTextA(g_bw.installer_icon, g_bw.config.installer_icon_file);
         SetWindowTextA(g_bw.uninstaller_icon, g_bw.config.uninstaller_icon_file);
+        bw_update_icon_previews();
         SendMessageA(g_bw.installer_style,
                      CB_SETCURSEL,
                      g_bw.config.installer_style,
@@ -206,6 +207,12 @@ static LRESULT CALLBACK bw_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM l
             return 0;
         case BW_ID_UNINSTALLER_ICON_BROWSE:
             bw_pick_uninstaller_icon();
+            return 0;
+        case BW_ID_INSTALLER_ICON_EDIT:
+        case BW_ID_UNINSTALLER_ICON_EDIT:
+            if (HIWORD(wparam) == EN_CHANGE) {
+                bw_update_icon_previews();
+            }
             return 0;
         case BW_ID_OPEN_OUTPUT:
             if (g_bw.generated && g_bw.result.package_dir[0] != '\0') {
@@ -348,6 +355,12 @@ static LRESULT CALLBACK bw_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM l
         }
         if (g_bw.icon_small != NULL) {
             DestroyIcon(g_bw.icon_small);
+        }
+        if (g_bw.installer_icon_preview_handle != NULL) {
+            DestroyIcon(g_bw.installer_icon_preview_handle);
+        }
+        if (g_bw.uninstaller_icon_preview_handle != NULL) {
+            DestroyIcon(g_bw.uninstaller_icon_preview_handle);
         }
         DeleteObject(g_bw.font_body);
         DeleteObject(g_bw.font_bold);
